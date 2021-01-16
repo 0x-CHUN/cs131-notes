@@ -30,7 +30,8 @@ def energy_function(image):
     gray_image = color.rgb2gray(image)
 
     ### YOUR CODE HERE
-    pass
+    grad = np.gradient(gray_image)
+    out = np.abs(grad[0]) + np.abs(grad[1])
     ### END YOUR CODE
 
     return out
@@ -77,7 +78,15 @@ def compute_cost(image, energy, axis=1):
     paths[0] = 0  # we don't care about the first row of paths
 
     ### YOUR CODE HERE
-    pass
+    cost = np.pad(cost, ((0, 0), (1, 1)), mode='constant', constant_values=float('inf'))
+    for i in range(1, H):
+        M = np.array([cost[i - 1, :W],
+                      cost[i - 1, 1:W + 1],
+                      cost[i - 1, 2:W + 2]])
+        paths[i] = np.argmin(M, axis=0)
+        cost[i, 1:-1] = M[paths[i], np.arange(W)] + energy[i]
+    paths[1:] -= 1
+    cost = cost[:, 1:-1]
     ### END YOUR CODE
 
     if axis == 0:
@@ -115,7 +124,8 @@ def backtrack_seam(paths, end):
     seam[H-1] = end
 
     ### YOUR CODE HERE
-    pass
+    for i in range(H - 2, -1, -1):
+        seam[i] = seam[i+1] + paths[i+1, seam[i+1]]
     ### END YOUR CODE
 
     # Check that seam only contains values in [0, W-1]
@@ -145,7 +155,7 @@ def remove_seam(image, seam):
     out = None
     H, W, C = image.shape
     ### YOUR CODE HERE
-    pass
+    out = image[np.arange(W) != seam[:, None]].reshape(H, W - 1, C)
     ### END YOUR CODE
     out = np.squeeze(out)  # remove last dimension if C == 1
 
@@ -193,7 +203,12 @@ def reduce(image, size, axis=1, efunc=energy_function, cfunc=compute_cost, bfunc
     assert size > 0, "Size must be greater than zero"
 
     ### YOUR CODE HERE
-    pass
+    for _ in range(W - size):
+        energy = efunc(out)
+        cost, paths = cfunc(out, energy)
+        end = np.argmin(cost[-1])
+        seam = backtrack_seam(paths, end)
+        out = remove_seam(out, seam)
     ### END YOUR CODE
 
     assert out.shape[1] == size, "Output doesn't have the right shape"
@@ -220,7 +235,11 @@ def duplicate_seam(image, seam):
     H, W, C = image.shape
     out = np.zeros((H, W + 1, C))
     ### YOUR CODE HERE
-    pass
+    j1 = np.indices((H, W, C))[1]
+    j2 = np.indices((H, W + 1, C))[1]
+    seam = seam.reshape(-1, 1, 1)
+    out[j2 <= seam] = image[j1 <= seam]
+    out[j2 > seam] = image[j1 >= seam]
     ### END YOUR CODE
 
     return out
@@ -261,7 +280,12 @@ def enlarge_naive(image, size, axis=1, efunc=energy_function, cfunc=compute_cost
     assert size > W, "size must be greather than %d" % W
 
     ### YOUR CODE HERE
-    pass
+    for _ in range(size - W):
+        energy = efunc(out)
+        cost, paths = cfunc(out, energy)
+        end = np.argmin(cost[-1])
+        seam = backtrack_seam(paths, end)
+        out = duplicate_seam(out, seam)
     ### END YOUR CODE
 
     if axis == 0:
@@ -388,7 +412,11 @@ def enlarge(image, size, axis=1, efunc=energy_function, cfunc=compute_cost, dfun
     assert size <= 2 * W, "size must be smaller than %d" % (2 * W)
 
     ### YOUR CODE HERE
-    pass
+    seams = find_seams(out, size - W)
+    seams = np.expand_dims(seams, axis=2)
+    for i in range(size - W):
+        out = duplicate_seam(out, np.where(seams == i+1)[1])
+        seams = duplicate_seam(seams, np.where(seams == i+1)[1])
     ### END YOUR CODE
 
     if axis == 0:
@@ -430,7 +458,23 @@ def compute_forward_cost(image, energy):
     paths[0] = 0  # we don't care about the first row of paths
 
     ### YOUR CODE HERE
-    pass
+    for i in range(1, H):
+        m1 = np.insert(image[i, 0:W-1], 0, 0, axis=0)
+        m2 = np.insert(image[i, 1:W], W-1, 0, axis=0)
+        m3 = image[i-1]
+        c_v = abs(m1 - m2)
+        c_v[0] = 0
+        c_v[-1] = 0
+        c_l = c_v + abs(m3 - m1)
+        c_r = c_v + abs(m3 - m2)
+        c_l[0] = 0
+        c_r[-1] = 0
+        i1 = np.insert(cost[i-1, 0:W-1], 0, 1e10, axis=0)
+        i2 = cost[i-1]
+        i3 = np.insert(cost[i-1, 1:W], W-1, 1e10, axis=0)
+        C = np.r_[i1 + c_l, i2 + c_v, i3 + c_r].reshape(3, -1)
+        cost[i] = energy[i] + np.min(C, axis=0)
+        paths[i] = np.argmin(C, axis=0) - 1
     ### END YOUR CODE
 
     # Check that paths only contains -1, 0 or 1
@@ -470,8 +514,21 @@ def reduce_fast(image, size, axis=1, efunc=energy_function, cfunc=compute_cost):
 
     ### YOUR CODE HERE
     # Delete that line, just here for the autograder to pass setup checks
-    out = reduce(image, size, 1, efunc, cfunc)
-    pass
+    energy = efunc(out)    
+    while out.shape[1] > size:
+        cost, paths = cfunc(out, energy)
+        end = np.argmin(cost[-1])
+        seam = backtrack_seam(paths, end)
+        # Get the seam area
+        i = np.min(seam)
+        j = np.max(seam) 
+        out = remove_seam(out, seam)
+        if i <= 3:
+            energy = np.c_[efunc(out[:, 0: j+2])[:, : -1], energy[:, j+2: ]]
+        elif j >= out.shape[1]-3:
+            energy = np.c_[energy[:, 0: i-1], efunc(out[:, i-3: ])[:, 2: ]]
+        else:
+            energy = np.c_[energy[:, 0: i-1], efunc(out[:, i-3: j+2])[:, 2: -1], energy[:, j+2:]]
     ### END YOUR CODE
 
     assert out.shape[1] == size, "Output doesn't have the right shape"
@@ -500,7 +557,15 @@ def remove_object(image, mask):
     out = np.copy(image)
 
     ### YOUR CODE HERE
-    pass
+    while not np.all(mask == 0):
+        energy = energy_function(out)
+        energy[mask] -= 1000
+        cost, paths = compute_forward_cost(out, energy)
+        end = np.argmin(cost[-1])
+        seam = backtrack_seam(paths, end)
+        out = remove_seam(out, seam)
+        mask = remove_seam(mask, seam)
+    out = enlarge(out, W)
     ### END YOUR CODE
 
     assert out.shape == image.shape
