@@ -49,7 +49,12 @@ def lucas_kanade(img1, img2, keypoints, window_size=5):
         y, x = int(round(y)), int(round(x))
 
         ### YOUR CODE HERE
-        pass
+        A1 = Ix[y-w:y+w+1, x-w:x+w+1]
+        A2 = Iy[y-w:y+w+1, x-w:x+w+1]
+        A = np.c_[A1.reshape(-1, 1), A2.reshape(-1, 1)]
+        b = -It[y-w:y+w+1, x-w:x+w+1].reshape(-1, 1)
+        d = np.linalg.lstsq(A, b, rcond=None)[0].flatten()
+        flow_vectors.append(d)
         ### END YOUR CODE
 
     flow_vectors = np.array(flow_vectors)
@@ -95,7 +100,10 @@ def iterative_lucas_kanade(img1, img2, keypoints,
 
         # TODO: Compute inverse of G at point (x1, y1)
         ### YOUR CODE HERE
-        pass
+        y_i, x_i = max(y1 - w, 0), max(x1 - w, 0)
+        y_j, x_j = y1 + w + 1, x1 + w + 1
+        A = np.hstack((Ix[y_i:y_j, x_i:x_j].reshape(-1, 1),
+                       Iy[y_i:y_j, x_i:x_j].reshape(-1, 1)))
         ### END YOUR CODE
 
         # iteratively update flow vector
@@ -106,7 +114,11 @@ def iterative_lucas_kanade(img1, img2, keypoints,
 
             # TODO: Compute bk and vk = inv(G) x bk
             ### YOUR CODE HERE
-            pass
+            y2_i, x2_i = max(y2 - w, 0), max(x2 - w, 0)
+            y2_j, x2_j = y2 + w + 1, x2 + w + 1
+            bk = (img1[y_i:y_j, x_i:x_j] -
+                  img2[y2_i:y2_j, x2_i:x2_j]).reshape(-1, 1)
+            vk = np.linalg.lstsq(A, bk, rcond=None)[0].flatten()
             ### END YOUR CODE
 
             # Update flow vector by vk
@@ -147,7 +159,13 @@ def pyramid_lucas_kanade(img1, img2, keypoints,
 
     for L in range(level, -1, -1):
         ### YOUR CODE HERE
-        pass
+        I_L = pyramid1[L]
+        J_L = pyramid2[L]
+        p_L = keypoints / scale**L
+        d = iterative_lucas_kanade(
+            I_L, J_L, p_L, window_size=window_size, num_iters=num_iters, g=g)
+        if L > 0:
+            g = scale * (g + d)
         ### END YOUR CODE
 
     d = g + d
@@ -168,7 +186,9 @@ def compute_error(patch1, patch2):
     assert patch1.shape == patch2.shape, 'Differnt patch shapes'
     error = 0
     ### YOUR CODE HERE
-    pass
+    patch1 = (patch1 - patch1.mean()) / patch1.std()
+    patch2 = (patch2 - patch2.mean()) / patch2.std()
+    error = np.mean(np.square(patch1 - patch2))
     ### END YOUR CODE
     return error
 
@@ -249,7 +269,9 @@ def IoU(bbox1, bbox2):
     score = 0
 
     ### YOUR CODE HERE
-    pass
+    x = max(0, min(x1+w1, x2+w2) - max(x1, x2))
+    y = max(0, min(y1+h1, y2+h2) - max(y1, y2))
+    score = (x * y) / (w1 * h1 + w2 * h2 - x*y)
     ### END YOUR CODE
 
     return score
